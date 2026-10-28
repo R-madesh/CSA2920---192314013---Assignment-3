@@ -1,0 +1,186 @@
+ 
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
+
+#define METER_MAX 65535L
+#define ROLLOVER_MIN 60000L
+#define ROLLOVER_MAX 5535L
+
+#define FIXED_CHARGE_P 5000LL
+#define RATE_1_P 0LL
+#define RATE_2_P 225LL
+#define RATE_3_P 450LL
+
+#define BILL_COUNT 5
+
+typedef long long money_t;
+
+/* Validate meter reading input */
+int parse_reading(const char *s, long *value)
+{
+    char *end;
+    long n;
+
+    if (s == NULL || *s == '\0' ||
+        *s == '-' || *s == '+')
+        return 0;
+
+    errno = 0;
+    n = strtol(s, &end, 10);
+
+    if (errno == ERANGE || end == s || *end != '\0' ||
+        n < 0 || n > METER_MAX)
+        return 0;
+
+    *value = n;
+    return 1;
+}
+
+/* Calculate units, including 16-bit meter rollover */
+int calculate_units(long prev, long curr, long *units)
+{
+    if (prev < 0 || prev > METER_MAX ||
+        curr < 0 || curr > METER_MAX)
+        return 0;
+
+    if (curr >= prev) {
+        *units = curr - prev;
+        return 1;
+    }
+
+    if (prev >= ROLLOVER_MIN && curr <= ROLLOVER_MAX) {
+        *units = (METER_MAX - prev) + 1 + curr;
+        return 1;
+    }
+
+    return 0;
+}
+
+/* Billing using fixed if-else statements */
+money_t bill_fixed(long units)
+{
+    money_t energy = 0;
+
+    if (units <= 100) {
+        energy = 0;
+    } else if (units <= 200) {
+        energy = (units - 100) * RATE_2_P;
+    } else {
+        energy = 100 * RATE_2_P +
+                 (units - 200) * RATE_3_P;
+    }
+
+    return FIXED_CHARGE_P + energy;
+}
+
+/* Billing using arrays and a loop */
+money_t bill_loop(long units)
+{
+    const long limits[] = {100, 200, LONG_MAX};
+    const money_t rates[] = {RATE_1_P, RATE_2_P, RATE_3_P};
+
+    long lower = 0;
+    long remaining = units;
+    money_t energy = 0;
+    int i;
+
+    for (i = 0; i < 3 && remaining > 0; i++) {
+        long width = limits[i] - lower;
+        long amount = remaining < width ? remaining : width;
+
+        energy += (money_t)amount * rates[i];
+        remaining -= amount;
+        lower = limits[i];
+    }
+
+    return FIXED_CHARGE_P + energy;
+}
+
+/* Print a bill */
+void print_bill(const char *name, long prev, long curr)
+{
+    long units;
+    money_t bill;
+
+    if (!calculate_units(prev, curr, &units)) {
+        printf("%-25s INVALID READING\n", name);
+        return;
+    }
+
+    bill = bill_fixed(units);
+
+    printf("%-25s Units = %ld, Bill = Rs %lld.%02lld\n",
+           name, units, bill / 100, bill % 100);
+}
+
+int main(void)
+{
+    long units;
+    money_t total = 0;
+    int i;
+
+    printf("GRAMА JYOTHI ELECTRICITY BILLING\n");
+    printf("--------------------------------\n\n");
+
+    print_bill("Zero units", 1000, 1000);
+    print_bill("Exactly 100 units", 1000, 1100);
+    print_bill("150 units", 1000, 1150);
+    print_bill("Exactly 200 units", 1000, 1200);
+    print_bill("250 units", 1000, 1250);
+    print_bill("Rollover 65535 to 0", 65535, 0);
+    print_bill("Invalid decreasing reading", 1200, 1100);
+
+    printf("\nFIVE HOUSEHOLD TEST\n");
+    printf("-------------------\n");
+
+    {
+        const long previous[BILL_COUNT] =
+            {1000, 1000, 1000, 1000, 1000};
+
+        const long current[BILL_COUNT] =
+            {1000, 1100, 1150, 1200, 1250};
+
+        for (i = 0; i < BILL_COUNT; i++) {
+            calculate_units(previous[i], current[i], &units);
+
+            money_t bill = bill_fixed(units);
+            total += bill;
+
+            printf("House %d: %ld units, Rs %lld.%02lld\n",
+                   i + 1, units, bill / 100, bill % 100);
+        }
+
+        printf("TOTAL BILL = Rs %lld.%02lld\n",
+               total / 100, total % 100);
+    }
+
+    printf("\nINVALID INPUT TESTS\n");
+    printf("-------------------\n");
+
+    {
+        const char *inputs[] = {"123", "abc", "-10", "65536"};
+        long value;
+
+        for (i = 0; i < 4; i++) {
+            printf("%s : %s\n", inputs[i],
+                   parse_reading(inputs[i], &value)
+                       ? "VALID" : "INVALID");
+        }
+    }
+
+    printf("\nARRAY LOOP VERIFICATION\n");
+    printf("-----------------------\n");
+
+    for (i = 0; i <= 500; i++) {
+        if (bill_fixed(i) != bill_loop(i)) {
+            printf("Mismatch at %d units\n", i);
+            return 1;
+        }
+    }
+
+    printf("All bills from 0 to 500 units match.\n");
+
+    return 0;
+}
