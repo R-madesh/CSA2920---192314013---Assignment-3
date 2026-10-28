@@ -1,0 +1,118 @@
+ 
+#include <stdio.h>
+#include <limits.h>
+#include <float.h>
+#include <stdint.h>
+
+#define VILLAGE_BILLS 4000
+#define TALUK_BILLS 60000
+#define DISTRICT_BILLS 800000
+
+/* Five test bills, expressed in paise */
+#define BILL_1 5000LL
+#define BILL_2 5000LL
+#define BILL_3 16250LL
+#define BILL_4 27500LL
+#define BILL_5 50000LL
+
+#define FIVE_BILL_TOTAL 103750LL
+
+void compare_totals(int count)
+{
+    int i;
+    int bills[5] = {
+        5000, 5000, 16250, 27500, 50000
+    };
+
+    long long exact_total = 0;
+    float float_total = 0.0f;
+    double double_total = 0.0;
+
+    int repetitions = count / 5;
+
+    for (i = 0; i < repetitions; i++) {
+        int j;
+
+        for (j = 0; j < 5; j++) {
+            exact_total += bills[j];
+            float_total += (float)bills[j];
+            double_total += (double)bills[j];
+        }
+    }
+
+    printf("\nNumber of bills: %d\n", count);
+    printf("Integer total : %lld paise\n", exact_total);
+    printf("Float total   : %.0f paise\n", (double)float_total);
+    printf("Double total  : %.0f paise\n", double_total);
+
+    printf("Float error   : %.0f paise\n",
+           (double)float_total - (double)exact_total);
+    printf("Double error  : %.0f paise\n",
+           double_total - (double)exact_total);
+
+    printf("Exact rupees  : Rs %lld.%02lld\n",
+           exact_total / 100, exact_total % 100);
+}
+
+int main(void)
+{
+    printf("\nDATA TYPE SIZES\n");
+    printf("----------------\n");
+    printf("sizeof(char)      = %zu bytes\n", sizeof(char));
+    printf("sizeof(short)     = %zu bytes\n", sizeof(short));
+    printf("sizeof(int)       = %zu bytes\n", sizeof(int));
+    printf("sizeof(long)      = %zu bytes\n", sizeof(long));
+    printf("sizeof(long long) = %zu bytes\n", sizeof(long long));
+    printf("sizeof(float)     = %zu bytes\n", sizeof(float));
+    printf("sizeof(double)    = %zu bytes\n", sizeof(double));
+
+    printf("\nINTEGER RANGES\n");
+    printf("--------------\n");
+    printf("INT_MIN  = %d\n", INT_MIN);
+    printf("INT_MAX  = %d\n", INT_MAX);
+    printf("LONG_MAX = %ld\n", LONG_MAX);
+    printf("LLONG_MAX = %lld\n", LLONG_MAX);
+
+    printf("\nFLOATING-POINT PRECISION\n");
+    printf("------------------------\n");
+    printf("FLT_DIG = %d decimal digits\n", FLT_DIG);
+    printf("DBL_DIG = %d decimal digits\n", DBL_DIG);
+
+    printf("\nFIVE-BILL REFERENCE\n");
+    printf("-------------------\n");
+    printf("Total = %lld paise = Rs %lld.%02lld\n",
+           FIVE_BILL_TOTAL,
+           FIVE_BILL_TOTAL / 100,
+           FIVE_BILL_TOTAL % 100);
+
+    compare_totals(VILLAGE_BILLS);
+    compare_totals(TALUK_BILLS);
+    compare_totals(DISTRICT_BILLS);
+
+    printf("\nOVERFLOW CHECK\n");
+    printf("--------------\n");
+
+    {
+        long long district_total =
+            (long long)(DISTRICT_BILLS / 5) * FIVE_BILL_TOTAL;
+
+        printf("District total = %lld paise\n", district_total);
+
+        if (district_total > INT_MAX)
+            printf("int: OVERFLOW RISK\n");
+        else
+            printf("int: Total fits\n");
+
+        if (district_total > LONG_MAX)
+            printf("long: OVERFLOW RISK\n");
+        else
+            printf("long: Total fits\n");
+
+        if (district_total > LLONG_MAX)
+            printf("long long: OVERFLOW RISK\n");
+        else
+            printf("long long: Total fits\n");
+    }
+
+    return 0;
+}
