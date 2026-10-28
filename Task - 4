@@ -1,0 +1,158 @@
+ 
+#include <stdio.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <limits.h>
+
+/* Safe macro definitions */
+#define RUPEES_TO_PAISE(rupees) ((int64_t)(rupees) * 100LL)
+#define MAX_OF(a, b) (((a) > (b)) ? (a) : (b))
+
+#define MINUTES_PER_DAY 1440
+#define INTERVAL_MINUTES 15
+#define READINGS_PER_DAY (MINUTES_PER_DAY / INTERVAL_MINUTES)
+
+/* Peak hours: 6 PM to 10 PM */
+#define PEAK_START_HOUR 18
+#define PEAK_END_HOUR 22
+#define PEAK_MULTIPLIER 120
+
+int main(void)
+{
+    int64_t base_rate_paise;
+    int64_t fixed_charge_paise;
+    int64_t previous_wh;
+    int64_t current_wh;
+    int64_t energy_numerator = 0;
+    int64_t energy_charge_paise;
+    int64_t total_bill_paise;
+    int64_t units_wh;
+    int hour, intervals, i;
+    int peak_intervals = 0;
+
+    FILE *fp = fopen("tariff.cfg", "r");
+
+    if (fp == NULL) {
+        printf("Error: Cannot open tariff.cfg\n");
+        return 1;
+    }
+
+    /* Read tariff values from the configuration file */
+    if (fscanf(fp, "%" SCNd64 " %" SCNd64,
+               &base_rate_paise,
+               &fixed_charge_paise) != 2) {
+        printf("Error: Invalid tariff configuration.\n");
+        fclose(fp);
+        return 1;
+    }
+
+    fclose(fp);
+
+    if (base_rate_paise < 0 || fixed_charge_paise < 0) {
+        printf("Error: Tariff values cannot be negative.\n");
+        return 1;
+    }
+
+    printf("Smart Meter Electricity Billing\n");
+    printf("Base tariff: %" PRId64 " paise/kWh\n",
+           base_rate_paise);
+    printf("Peak tariff: 20%% higher from 6 PM to 10 PM\n");
+    printf("Fixed charge: %" PRId64 " paise\n",
+           fixed_charge_paise);
+
+    printf("\nEnter number of 15-minute intervals: ");
+    if (scanf("%d", &intervals) != 1 ||
+        intervals < 1 || intervals > READINGS_PER_DAY) {
+        printf("Invalid number of intervals.\n");
+        return 1;
+    }
+
+    printf("Enter initial cumulative meter reading (Wh): ");
+    if (scanf("%" SCNd64, &previous_wh) != 1 ||
+        previous_wh < 0) {
+        printf("Invalid meter reading.\n");
+        return 1;
+    }
+
+    printf("\nEnter each interval's hour (0-23) and "
+           "cumulative reading (Wh).\n");
+
+    for (i = 0; i < intervals; i++) {
+        printf("Interval %d: ", i + 1);
+
+        if (scanf("%d %" SCNd64, &hour, &current_wh) != 2) {
+            printf("Invalid input.\n");
+            return 1;
+        }
+
+        if (hour < 0 || hour > 23 ||
+            current_wh < previous_wh) {
+            printf("Invalid hour or decreasing meter reading.\n");
+            return 1;
+        }
+
+        units_wh = current_wh - previous_wh;
+
+        /* Store costs with a common denominator of 100000.
+           This avoids rounding every 15-minute interval. */
+        if (units_wh > INT64_MAX / MAX_OF(base_rate_paise, 1LL)) {
+            printf("Reading is too large to calculate safely.\n");
+            return 1;
+        }
+
+        if (hour >= PEAK_START_HOUR && hour < PEAK_END_HOUR) {
+            if (units_wh * base_rate_paise >
+                INT64_MAX / PEAK_MULTIPLIER) {
+                printf("Reading is too large to calculate safely.\n");
+                return 1;
+            }
+
+            energy_numerator +=
+                units_wh * base_rate_paise * PEAK_MULTIPLIER;
+            peak_intervals++;
+        } else {
+            energy_numerator +=
+                units_wh * base_rate_paise * 100LL;
+        }
+
+        previous_wh = current_wh;
+    }
+
+    /* 1000 Wh = 1 kWh; multiplier denominator = 100 */
+    energy_charge_paise =
+        (energy_numerator + 50000LL) / 100000LL;
+
+    if (energy_charge_paise >
+        INT64_MAX - fixed_charge_paise) {
+        printf("Bill total overflow.\n");
+        return 1;
+    }
+
+    total_bill_paise =
+        energy_charge_paise + fixed_charge_paise;
+
+    printf("\n----- BILL SUMMARY -----\n");
+    printf("Intervals processed: %d\n", intervals);
+    printf("Intervals in peak period: %d\n", peak_intervals);
+    printf("Energy charge: Rs. %" PRId64 ".%02" PRId64 "\n",
+           energy_charge_paise / 100,
+           energy_charge_paise % 100);
+    printf("Fixed charge: Rs. %" PRId64 ".%02" PRId64 "\n",
+           fixed_charge_paise / 100,
+           fixed_charge_paise % 100);
+    printf("Total bill: Rs. %" PRId64 ".%02" PRId64 "\n",
+           total_bill_paise / 100,
+           total_bill_paise % 100);
+
+    printf("\nReadings per day: %d\n", READINGS_PER_DAY);
+    printf("Readings per year (365 days): %d\n",
+           READINGS_PER_DAY * 365);
+
+    printf("Example: Rs. 50 converted to paise = %" PRId64 "\n",
+           RUPEES_TO_PAISE(50));
+
+    printf("Larger of 100 and 200 = %d\n",
+           MAX_OF(100, 200));
+
+    return 0;
+}
