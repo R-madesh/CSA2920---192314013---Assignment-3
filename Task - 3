@@ -1,0 +1,194 @@
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <time.h>
+
+#define MAX_SLABS 10
+#define CONFIG_FILE "tariff.cfg"
+
+typedef int64_t money_t;
+
+typedef struct {
+    uint64_t upper_limit;
+    uint64_t rate_paise;
+} TariffSlab;
+
+typedef struct {
+    money_t fixed_charge;
+    int slab_count;
+    TariffSlab slabs[MAX_SLABS];
+} Tariff;
+
+/* Default tariff if no configuration file is supplied */
+void default_tariff(Tariff *t)
+{
+    t->fixed_charge = 5000;
+    t->slab_count = 3;
+
+    t->slabs[0].upper_limit = 100;
+    t->slabs[0].rate_paise = 0;
+
+    t->slabs[1].upper_limit = 200;
+    t->slabs[1].rate_paise = 225;
+
+    t->slabs[2].upper_limit = UINT64_MAX;
+    t->slabs[2].rate_paise = 450;
+}
+
+/* Read tariff configuration */
+int load_tariff(Tariff *t)
+{
+    FILE *fp = fopen(CONFIG_FILE, "r");
+    char key[64];
+    long long value;
+    int found_fixed = 0;
+    int found_slabs = 0;
+    int found_rates = 0;
+
+    if (fp == NULL)
+        return 0;
+
+    while (fscanf(fp, "%63[^=]=%lld\n", key, &value) == 2) {
+        if (value < 0)
+            continue;
+
+        if (key[0] == 'F') {
+            t->fixed_charge = value;
+            found_fixed = 1;
+        } else if (key[0] == 'S') {
+            if (found_slabs < MAX_SLABS) {
+                t->slabs[found_slabs].upper_limit =
+                    (uint64_t)value;
+                found_slabs++;
+            }
+        } else if (key[0] == 'R') {
+            if (found_rates < MAX_SLABS) {
+                t->slabs[found_rates].rate_paise =
+                    (uint64_t)value;
+                found_rates++;
+            }
+        }
+    }
+
+    fclose(fp);
+
+    if (!found_fixed || found_slabs != found_rates ||
+        found_slabs == 0)
+        return 0;
+
+    t->slab_count = found_slabs;
+    t->slabs[found_slabs - 1].upper_limit = UINT64_MAX;
+
+    return 1;
+}
+
+/* Calculate the bill in paise */
+int calculate_bill(uint64_t units, const Tariff *t,
+                   money_t *bill)
+{
+    uint64_t lower = 0;
+    uint64_t remaining = units;
+    money_t energy = 0;
+    int i;
+
+    for (i = 0; i < t->slab_count && remaining > 0; i++) {
+        uint64_t width;
+        uint64_t amount;
+        uint64_t rate = t->slabs[i].rate_paise;
+
+        if (t->slabs[i].upper_limit == UINT64_MAX)
+            width = remaining;
+        else
+            width = t->slabs[i].upper_limit - lower;
+
+        amount = remaining < width ? remaining : width;
+
+        if (amount > (uint64_t)INT64_MAX / rate && rate != 0)
+            return 0;
+
+        if (rate != 0 &&
+            amount * rate > (uint64_t)INT64_MAX - (uint64_t)energy)
+            return 0;
+
+        energy += (money_t)(amount * rate);
+        remaining -= amount;
+        lower = t->slabs[i].upper_limit;
+    }
+
+    if (remaining != 0 ||
+        energy > INT64_MAX - t->fixed_charge)
+        return 0;
+
+    *bill = t->fixed_charge + energy;
+    return 1;
+}
+
+int main(void)
+{
+    Tariff tariff;
+    money_t bill;
+    uint64_t test_units[] = {0, 100, 150, 200, 250};
+    int i;
+
+    default_tariff(&tariff);
+
+    if (load_tariff(&tariff))
+        printf("Tariff loaded from configuration file.\n");
+    else
+        printf("Using default tariff.\n");
+
+    printf("\nGRAMА JYOTHI - TASK 3\n");
+    printf("---------------------\n");
+    printf("Fixed charge: Rs %lld.%02lld\n",
+           (long long)(tariff.fixed_charge / 100),
+           (long long)(tariff.fixed_charge % 100));
+
+    printf("\nBILL VALIDATION\n");
+    printf("---------------\n");
+
+    for (i = 0; i < 5; i++) {
+        if (calculate_bill(test_units[i], &tariff, &bill)) {
+            printf("%" PRIu64 " units: Rs %lld.%02lld\n",
+                   test_units[i],
+                   (long long)(bill / 100),
+                   (long long)(bill % 100));
+        } else {
+            printf("Calculation error for %" PRIu64 " units\n",
+                   test_units[i]);
+        }
+    }
+
+    printf("\nDISTRICT-SCALE TOTAL\n");
+    printf("--------------------\n");
+
+    {
+        const int households = 800000;
+        const money_t sample_bill = 20750;
+        money_t total = (money_t)households * sample_bill;
+
+        printf("Households: %d\n", households);
+        printf("Average sample bill: Rs %lld.%02lld\n",
+               (long long)(sample_bill / 100),
+               (long long)(sample_bill % 100));
+        printf("Total: Rs %lld.%02lld\n",
+               (long long)(total / 100),
+               (long long)(total % 100));
+    }
+
+    printf("\nDATA TYPE SIZES\n");
+    printf("----------------\n");
+    printf("uint64_t: %zu bytes\n", sizeof(uint64_t));
+    printf("int64_t : %zu bytes\n", sizeof(int64_t));
+    printf("Tariff  : %zu bytes\n", sizeof(Tariff));
+
+    printf("\nCONFIGURATION COMPLEXITY\n");
+    printf("------------------------\n");
+    printf("Loading t tariff entries: O(t) time\n");
+    printf("Tariff storage: O(t) space\n");
+    printf("Billing one household: O(t) time\n");
+
+    return 0;
+}
